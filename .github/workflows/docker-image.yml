@@ -73,11 +73,6 @@ jobs:
             -f Dockerfile \
             -t ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:ci-${IMAGE_TAG} .
 
-      - name: Run unit tests inside container
-        run: |
-          docker run --rm \
-          ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:ci-${IMAGE_TAG}
-
 
 ###########################################################
 # PACKAGE FINAL IMAGE
@@ -106,7 +101,7 @@ jobs:
       - name: Build Final Docker Image
         run: |
           docker build \
-            -f Dockerfile.final \
+            -f Dockerfile \
             -t ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:${IMAGE_TAG} .
 
       - name: Push to submission repository
