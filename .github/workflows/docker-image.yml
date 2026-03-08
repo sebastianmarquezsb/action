@@ -59,6 +59,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Setup Buildx es vital para que el sistema reconozca la caché de GitHub (GHA)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3        
+
       - name: Docker Login JFrog
         run: |
           echo "${JFROG_PASSWORD}" | docker login ${REGISTRY} \
@@ -67,12 +71,53 @@ jobs:
           JFROG_USER: ${{ secrets.JFROG_USER }}
           JFROG_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
 
-      - name: Build CI Docker Image
-        run: |
-          docker build \
-            -f Dockerfile \
-            -t ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:ci-${IMAGE_TAG} .
+      # - name: Build CI Docker Image
+      #   run: |
+      #     docker build \
+      #       -f Dockerfile \
+      #       -t ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:ci-${IMAGE_TAG} .
 
+      # --- PASO 1: BUILD CI (Artifact 1) ---
+      # Aquí se descarga la imagen de 1GB por PRIMERA VEZ o se trae de la caché GHA
+      - name: Build CI Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: ci-stage # Si usas multi-stage
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:ci-${{ github.sha }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- PASO 2: BUILD CD (Artifact 2) ---
+      # Docker detectará que la base es la misma y NO descargará el giga otra vez
+      - name: Build CD Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: cd-stage
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cd-${{ github.sha }}
+          load: true
+          cache-from: type=gha
+
+      # --- PASO 3: SCAN CON WIZ ---
+      # Escaneamos la imagen de CD antes de generar el artefacto final
+      - name: Wiz Scan
+        run: |
+          curl -o wizcli https://wizcli.s3.amazonaws.com/wizcli && chmod +x wizcli
+          ./wizcli auth --id "${{ secrets.WIZ_CLIENT_ID }}" --secret "${{ secrets.WIZ_CLIENT_SECRET }}"
+          ./wizcli docker scan --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cd-${{ github.sha }}
+
+      # --- PASO 4: BUILD FINAL (Artifact 3) ---
+      # Solo si el scan pasó. Se reutiliza todo lo anterior.
+      - name: Build Final Image
+        if: success()
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.pipeline-init.outputs.image_tag }}
+          push: true # Este ya se sube al registro oficial
+          cache-from: type=gha
 
 ###########################################################
 # PACKAGE FINAL IMAGE
