@@ -119,7 +119,8 @@ jobs:
   sonar:
     name: SonarQube Scan
     #runs-on: [self-hosted, linux, build-runner]
-    runs-on: [ubuntu-latest, mmc-ubuntu]needs: package
+    runs-on: [ubuntu-latest, mmc-ubuntu]
+    needs: package
     continue-on-error: true
 
     steps:
