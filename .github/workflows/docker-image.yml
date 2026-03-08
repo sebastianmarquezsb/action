@@ -1,0 +1,266 @@
+name: NodeJS Enterprise DevSecOps Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ${{ vars.JFROG_URL }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  SUBMISSION_REPO: ${{ vars.JFROG_SUBMISSION_REPO }}
+  PROD_REPO: ${{ vars.JFROG_PROD_REPO }}
+  IMAGE_TAG: ${{ github.sha }}
+
+###########################################################
+# PLAN / CODE STAGE
+###########################################################
+jobs:
+
+  lint:
+    name: Code Quality (Lint)
+    runs-on: [self-hosted, linux, build-runner]
+
+    steps:
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+
+###########################################################
+# BUILD + TEST (Docker CI Image)
+###########################################################
+
+  build-test:
+    name: Build and Test (CI Image)
+    runs-on: [self-hosted, linux, docker-runner]
+    needs: lint
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker Login JFrog
+        run: |
+          echo "${JFROG_PASSWORD}" | docker login ${REGISTRY} \
+          -u "${JFROG_USER}" --password-stdin
+        env:
+          JFROG_USER: ${{ secrets.JFROG_USER }}
+          JFROG_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
+
+      - name: Build CI Docker Image
+        run: |
+          docker build \
+            -f Dockerfile.ci \
+            -t ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:ci-${IMAGE_TAG} .
+
+      - name: Run unit tests inside container
+        run: |
+          docker run --rm \
+          ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:ci-${IMAGE_TAG}
+
+
+###########################################################
+# PACKAGE FINAL IMAGE
+###########################################################
+
+  package:
+    name: Build Final Production Image
+    runs-on: [self-hosted, linux, docker-runner]
+    needs: build-test
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker Login
+        run: |
+          echo "${JFROG_PASSWORD}" | docker login ${REGISTRY} \
+          -u "${JFROG_USER}" --password-stdin
+        env:
+          JFROG_USER: ${{ secrets.JFROG_USER }}
+          JFROG_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
+
+      - name: Build Final Docker Image
+        run: |
+          docker build \
+            -f Dockerfile.final \
+            -t ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:${IMAGE_TAG} .
+
+      - name: Push to submission repository
+        run: |
+          docker push \
+          ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+
+
+###########################################################
+# SONAR SCAN (NON BLOCKING)
+###########################################################
+
+  sonar:
+    name: SonarQube Scan
+    runs-on: [self-hosted, linux, build-runner]
+    needs: package
+    continue-on-error: true
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Sonar Scanner
+        run: |
+          npx sonar-scanner \
+            -Dsonar.projectKey=${IMAGE_NAME} \
+            -Dsonar.sources=src \
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.login=${SONAR_TOKEN}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+
+###########################################################
+# WIZ SECURITY SCAN
+###########################################################
+
+  wiz-scan:
+    name: Wiz Container Scan
+    runs-on: [self-hosted, linux, security-runner]
+    needs: package
+
+    steps:
+
+      - name: Authenticate Wiz
+        run: |
+          wizcli auth \
+            --id ${WIZ_CLIENT_ID} \
+            --secret ${WIZ_CLIENT_SECRET}
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+
+      - name: Scan container image
+        run: |
+          wizcli image scan \
+            ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:${IMAGE_TAG} \
+            --output wiz-scan.json
+
+      - name: Download full security report
+        run: |
+          wizcli image report \
+            ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:${IMAGE_TAG} \
+            --format json \
+            --output wiz-report.json
+
+      - name: Upload Wiz Scan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiz-security-report
+          path: |
+            wiz-scan.json
+            wiz-report.json
+
+
+###########################################################
+# PROMOTE IMAGE TO PRODUCTION REPOSITORY
+###########################################################
+
+  promote:
+    name: Promote Image to Production
+    runs-on: [self-hosted, linux, docker-runner]
+    needs: wiz-scan
+
+    steps:
+
+      - name: Docker Login
+        run: |
+          echo "${JFROG_PASSWORD}" | docker login ${REGISTRY} \
+          -u "${JFROG_USER}" --password-stdin
+        env:
+          JFROG_USER: ${{ secrets.JFROG_USER }}
+          JFROG_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
+
+      - name: Pull submission image
+        run: |
+          docker pull \
+          ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+
+      - name: Tag production image
+        run: |
+          docker tag \
+          ${REGISTRY}/${SUBMISSION_REPO}/${IMAGE_NAME}:${IMAGE_TAG} \
+          ${REGISTRY}/${PROD_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+
+      - name: Push production image
+        run: |
+          docker push \
+          ${REGISTRY}/${PROD_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+
+
+###########################################################
+# DEPLOY TO KUBERNETES USING HELM
+###########################################################
+
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: [self-hosted, linux, k8s-runner]
+    needs: promote
+    environment: production
+
+    steps:
+
+      - name: Checkout Helm chart
+        uses: actions/checkout@v4
+
+      - name: Configure kubeconfig
+        run: |
+          echo "${KUBE_CONFIG}" > kubeconfig
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Deploy Helm chart
+        run: |
+          helm upgrade --install ${IMAGE_NAME} ./helm \
+            --namespace ${K8S_NAMESPACE} \
+            --create-namespace \
+            --set image.repository=${REGISTRY}/${PROD_REPO}/${IMAGE_NAME} \
+            --set image.tag=${IMAGE_TAG} \
+            --kubeconfig kubeconfig
+
+
+###########################################################
+# POST DEPLOY INFO
+###########################################################
+
+  monitor:
+    name: Deployment Info
+    runs-on: [self-hosted, linux, k8s-runner]
+    needs: deploy
+
+    steps:
+
+      - name: Print deployment info
+        run: |
+          echo "Deployment completed"
+          echo "Image:"
+          echo "${REGISTRY}/${PROD_REPO}/${IMAGE_NAME}:${IMAGE_TAG}"
