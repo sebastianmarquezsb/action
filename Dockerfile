@@ -8,13 +8,13 @@ CMD ["npm","start"]
 FROM node:20 AS base
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # --- STAGE 2: CI (para testing y análisis) ---
 FROM node:20 AS ci-stage
 WORKDIR /app
 COPY . .
-RUN npm ci
+RUN npm install
 # Aquí van tus comandos de test/lint si los tienes
 # RUN npm run lint
 # RUN npm run test
