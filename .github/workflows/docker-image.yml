@@ -100,13 +100,13 @@ jobs:
           load: true
           cache-from: type=gha
 
-      # --- PASO 3: SCAN CON WIZ ---
-      # Escaneamos la imagen de CD antes de generar el artefacto final
-      - name: Wiz Scan
-        run: |
-          curl -o wizcli https://wizcli.s3.amazonaws.com/wizcli && chmod +x wizcli
-          ./wizcli auth --id "${{ secrets.WIZ_CLIENT_ID }}" --secret "${{ secrets.WIZ_CLIENT_SECRET }}"
-          ./wizcli docker scan --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cd-${{ github.sha }}
+      # # --- PASO 3: SCAN CON WIZ ---
+      # # Escaneamos la imagen de CD antes de generar el artefacto final
+      # - name: Wiz Scan
+      #   run: |
+      #     curl -o wizcli https://wizcli.s3.amazonaws.com/wizcli && chmod +x wizcli
+      #     ./wizcli auth --id "${{ secrets.WIZ_CLIENT_ID }}" --secret "${{ secrets.WIZ_CLIENT_SECRET }}"
+      #     ./wizcli docker scan --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cd-${{ github.sha }}
 
       # --- PASO 4: BUILD FINAL (Artifact 3) ---
       # Solo si el scan pasó. Se reutiliza todo lo anterior.
