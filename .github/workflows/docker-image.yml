@@ -23,8 +23,8 @@ jobs:
 
   lint:
     name: Code Quality (Lint)
-    runs-on: [self-hosted, linux, build-runner]
-
+    #runs-on: [self-hosted, linux, build-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]
     steps:
 
       - name: Checkout source
@@ -48,7 +48,8 @@ jobs:
 
   build-test:
     name: Build and Test (CI Image)
-    runs-on: [self-hosted, linux, docker-runner]
+    # runs-on: [self-hosted, linux, docker-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]
     needs: lint
 
     steps:
@@ -82,7 +83,8 @@ jobs:
 
   package:
     name: Build Final Production Image
-    runs-on: [self-hosted, linux, docker-runner]
+    #runs-on: [self-hosted, linux, docker-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]
     needs: build-test
 
     steps:
@@ -116,8 +118,8 @@ jobs:
 
   sonar:
     name: SonarQube Scan
-    runs-on: [self-hosted, linux, build-runner]
-    needs: package
+    #runs-on: [self-hosted, linux, build-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]needs: package
     continue-on-error: true
 
     steps:
@@ -145,7 +147,8 @@ jobs:
 
   wiz-scan:
     name: Wiz Container Scan
-    runs-on: [self-hosted, linux, security-runner]
+    #runs-on: [self-hosted, linux, security-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]
     needs: package
 
     steps:
@@ -187,7 +190,8 @@ jobs:
 
   promote:
     name: Promote Image to Production
-    runs-on: [self-hosted, linux, docker-runner]
+    #runs-on: [self-hosted, linux, docker-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]
     needs: wiz-scan
 
     steps:
@@ -223,7 +227,8 @@ jobs:
 
   deploy:
     name: Deploy to Kubernetes
-    runs-on: [self-hosted, linux, k8s-runner]
+    #runs-on: [self-hosted, linux, k8s-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]
     needs: promote
     environment: production
 
@@ -254,7 +259,8 @@ jobs:
 
   monitor:
     name: Deployment Info
-    runs-on: [self-hosted, linux, k8s-runner]
+    #runs-on: [self-hosted, linux, k8s-runner]
+    runs-on: [ubuntu-latest, mmc-ubuntu]
     needs: deploy
 
     steps:
