@@ -1,0 +1,14 @@
+name: Print client payload
+on:
+  repository_dispatch:
+    types: [build]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get version
+        run: echo "The version is ${{ github.event.client_payload.version }}"
+      - name: Check out specific ref
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.client_payload.ref }}
