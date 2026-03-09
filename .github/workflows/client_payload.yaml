@@ -47,3 +47,11 @@ jobs:
           curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                -H "Accept: application/vnd.github+json" \
                "https://github.com/${{ github.repository }}/issues"
+
+      - name: Disparar repositorio destino
+        run: |
+          curl -X POST \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              https://github.com \
+              -d '{"event_type": "build", "client_payload": {"version": "v2", "ref": "develop"}}'
