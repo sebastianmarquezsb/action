@@ -1,25 +1,33 @@
 name: Print client payload
+
 on:
   workflow_dispatch:
-   
-     
+    # Permite ejecución manual desde la interfaz de GitHub
   repository_dispatch:
     types: [build]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Get version
-        run: echo "The version is ${{ github.event.client_payload.version }}"
+        run: |
+          # Usamos un valor por defecto para evitar errores si el payload no existe
+          echo "The version is ${{ github.event.client_payload.version || 'manual-run' }}"
+
       - name: Check out specific ref
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4 # Actualizado a v4 (más estable y reciente)
         with:
-          ref: ${{ github.event.client_payload.ref }}
-  token:
-   runs-on: ubuntu-latest
-   steps:
-    - name: Ejemplo usando el token
-      run: |
-        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-           https://github.com{{ github.repository }}/issues
-       
+          # Si no hay ref en el payload, usa la rama por defecto
+          ref: ${{ github.event.client_payload.ref || github.ref }}
+
+  token-example:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read # Permiso necesario para listar issues
+    steps:
+      - name: Ejemplo usando el token via API
+        run: |
+          curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Accept: application/vnd.github+json" \
+               "https://github.com{{ github.repository }}/issues"
