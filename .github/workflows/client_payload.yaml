@@ -20,6 +20,22 @@ jobs:
         with:
           # Si no hay ref en el payload, usa la rama por defecto
           ref: ${{ github.event.client_payload.ref || github.ref }}
+    
+      - name: Volcar todo el client_payload
+        run: echo '${{ toJson(github.event.client_payload) }}'
+
+      - name: Leer payload con Script
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const payload = context.payload.client_payload;
+            console.log("Contenido completo:", JSON.stringify(payload, null, 2));
+        
+            // Ejemplo de acceso a una propiedad específica
+            if (payload && payload.version) {
+              core.info(`Trabajando con la versión: ${payload.version}`);
+            }
+
 
   token-example:
     runs-on: ubuntu-latest
